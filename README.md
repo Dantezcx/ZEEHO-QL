@@ -121,7 +121,7 @@ const CLAIM_BOX_ENABLED = true;
 
 ### 社区任务（点赞/发帖/分享/删帖）
 
-脚本已实现社区四件套接口（点赞/发帖/分享/删除），走 `tapi.zeehoev.com` 网关（与 h5 签到网关独立），**默认全部关闭**。用 [zeeho_sign_safe.js](zeeho_sign_safe.js#L226) 顶部的 `COMMUNITY_ENABLED` 开启需要的项：
+脚本已实现社区四件套接口（点赞/发帖/分享/删除），**默认全部关闭**。用 [zeeho_sign_safe.js](zeeho_sign_safe.js#L226) 顶部的 `COMMUNITY_ENABLED` 开启需要的项：
 
 ```js
 const COMMUNITY_ENABLED = {
