@@ -41,7 +41,7 @@
 
 1. 用 [jadx](https://github.com/skylot/jadx) 或 [apktool](https://apktool.org/) 反编译 ZEEHO.apk
 2. 在反编译产物里全局搜索字符串 `appId=` 或 `Cfmoto-X-Sign`，定位签名构造函数
-3. 跟踪到 `md5(sha1(server_name=SMART + param + APP_SECRET))` 处，APP_SECRET 即附近硬编码的 40 位 hex 字符串
+3. 跟踪到签名构造函数处（含 md5、sha1 调用的那个），APP_SECRET 即附近硬编码的 40 位 hex 字符串
 4. APP_ID 在同一函数附近，8 位字母数字
 
 > 不想反编译？那就用不了这个脚本——这是脱敏分享的代价。
