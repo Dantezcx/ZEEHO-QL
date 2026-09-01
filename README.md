@@ -50,7 +50,22 @@
 
 ## 安装
 
-### 1. 放脚本
+### 1. 拉取脚本（两种方式任选）
+
+**方式 A：青龙订阅（推荐，可自动更新）**
+
+青龙面板 → 订阅管理 → 新建：
+
+| 字段 | 值 |
+|------|----|
+| 名称 | ZEEHO 签到 |
+| 链接 | `https://raw.githubusercontent.com/Dantezcx/ZEEHO-QL/main/zeeho_sign_safe.js` |
+| 类型 | 脚本 |
+| 定时 | `0 0 * * *`（每天自动拉取更新） |
+
+> 国内访问 GitHub raw 慢可用 jsdelivr CDN：`https://cdn.jsdelivr.net/gh/Dantezcx/ZEEHO-QL@main/zeeho_sign_safe.js`
+
+**方式 B：手动上传**
 
 把 [zeeho_sign_safe.js](zeeho_sign_safe.js) 上传到青龙面板「脚本管理」，或直接粘贴新建。
 
