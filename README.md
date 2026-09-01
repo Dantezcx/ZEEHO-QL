@@ -2,7 +2,7 @@
 
 > 青龙面板（QingLong）上运行的 ZEEHO（春风动力）App 每日自动签到脚本，零依赖纯 Node.js 实现。
 >
-> 接口、签名算法与 ZEEHO App 完全一致：`sign = md5(sha1("server_name=SMART" + param + APP_SECRET))`。
+> 接口与 ZEEHO App 完全一致，签名算法脚本内部已实现，使用者无需关心。
 
 ---
 
@@ -144,25 +144,6 @@ const CLAIM_BOX_ENABLED = true;
 - **频率温和**：脚本本身只发 3 个请求（用户信息/签到状态/签到），不会触发风控；但同一 IP 短时间内多次手动运行仍可能被 WAF 拦截
 - **token 时效**：`ZEEHO_AUTH_TOKEN` 是登录态，会过期，过期后需重新抓包获取
 - **本脚本仅供学习交流与个人使用**，请尊重 ZEEHO 服务条款
-
----
-
-## 签名算法（脚本内部已实现，无需手动处理）
-
-```
-param   = "appId=" + APP_ID + "&nonce=" + uuid + "&timestamp=" + Date.now()
-toSign  = "server_name=SMART" + param + APP_SECRET
-sign    = md5( sha1( toSign ) )              // 嵌套双哈希
-
-请求头：
-  Cfmoto-X-Param      : param
-  Cfmoto-X-Sign       : sign
-  Cfmoto-X-Sign-Type  : "0"
-  Authorization       : "Bearer " + ZEEHO_AUTH_TOKEN
-  user_id             : <从 baseInfo 接口拿到的用户 id>
-```
-
-补签盲盒接口签名在 `toSign` 前缀多拼一段 `supplementDate=<日期>`，其余同型。
 
 ---
 
