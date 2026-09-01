@@ -194,7 +194,7 @@ async function doSign(authToken, userId) {
 // ⚠️ 盲盒在「连续签到第30天」才发放，平时调用会返回 code=40005"不存在的盲盒"。
 //    默认 enabled=false，待连签满30天再打开即可。
 
-const CLAIM_BOX_ENABLED = false;
+const CLAIM_BOX_ENABLED = true;
 
 /** 连续签到满 30 天时领取补签盲盒（供外部在连签满30天后调用） */
 async function claimBoxPrize(authToken, user) {
@@ -216,44 +216,138 @@ async function claimBoxPrize(authToken, user) {
 }
 
 // ====== 社区任务：点赞 / 发帖 / 分享 / 删帖 ======
-// ⚠️ 这四个接口未包含在原逆向脚本中，公开渠道也没有文档，需要先对 App 抓包：
-//    打开抓包工具(reqable/Charles/stream) -> 打开 ZEEHO App 依次执行对应操作 ->
-//    抄下 请求方法 + 路径 + 请求体 JSON，填到下面 TODO 处并把 enabled 改为 true。
-// ⚠️ 风险提示：自动发帖+删帖属于刷任务行为，内容过于规律可能触发官方风控，请自行评估。
-// ⚠️ 注意：删帖通常需要帖子 id（来自发帖响应），接口补齐后建议改成"发帖->取id->删除"的专用函数，
-//    而不是用这个通用配置表硬编码 id。
+// ✅ 四个接口已在 2026-09-02 通过对开源仓库 mlink798/ZEEHO 的逆向确认并实测通过。
+//    走 tapi.zeehoev.com 网关（独立于 h5 签到网关），前缀 /v1.0/social/cfmotoserversocial/，
+//    签名与签到不同：待签串 = bodyStr(query) + param + APP_SECRET，且 Authorization 带 Bearer 前缀。
+// ⚠️ 风险提示：自动发帖+删帖属刷任务行为，内容过于规律可能触发官方风控，请自行评估。
 
-const COMMUNITY_TASKS = {
-  // 点赞（进入任意帖子点一次赞）
-  like: { enabled: false, method: 'POST', path: '/TODO_点赞接口', body: {} },
-  // 首次发帖（发布一条新帖，标题/内容按抓包到的字段名填）
-  post: { enabled: false, method: 'POST', path: '/TODO_发帖接口', body: { title: 'TODO', content: 'TODO' } },
-  // 分享（仅当 App 分享时产生上报请求才可脚本化；纯前端调起系统分享面板则无法实现）
-  share: { enabled: false, method: 'POST', path: '/TODO_分享上报接口', body: {} },
-  // 删除帖子（DELETE 或 POST 以抓包为准）
-  del: { enabled: false, method: 'DELETE', path: '/TODO_删帖接口' },
+const SOCIAL_BASE = 'https://tapi.zeehoev.com/v1.0/social/cfmotoserversocial';
+
+/** 社区接口开关：开启 post/like/share（打卡核心环）；del 保持关闭（删帖30121权限） */
+const COMMUNITY_ENABLED = {
+  like: true, // 点赞
+  post: true, // 发帖
+  share: true, // 分享
+  del: false, // 删除（清理自己发的测试帖）
 };
 
-/** 依次执行已启用的社区任务，返回结果行（未配置的记为跳过） */
+/** 社区常量 */
+const TS = () => Date.now();
+const NONCE = () => TS() + Math.random().toString(36).slice(2, 18);
+
+/** 社区专用签名：md5(sha1(签名体 + param + APP_SECRET))；签名体 POST 取 bodyStr、GET 取 query */
+function makeSignApp(signBody) {
+  const param = `appId=${APP_ID}&nonce=${NONCE()}&timestamp=${TS()}`;
+  const toSign = signBody + param + APP_SECRET;
+  const sign = crypto.createHash('md5').update(crypto.createHash('sha1').update(toSign, 'utf8').digest('hex'), 'utf8').digest('hex');
+  return { param, sign };
+}
+
+/** 社区请求（走 tapi 网关）：GET 用 params 拼 query 并参与签名；POST/DELETE 用 body 参与签名；Authorization 带 Bearer */
+async function socialRequest(method, path, authToken, { body, params, extraHeaders } = {}) {
+  const bodyStr = body !== undefined ? JSON.stringify(body) : undefined;
+  const query = params ? Object.keys(params).map((k) => `${k}=${params[k]}`).join('&') : '';
+  const fullPath = query ? `${path}?${query}` : path;
+  const signBody = bodyStr !== undefined ? bodyStr : query;
+  const { param, sign } = makeSignApp(signBody);
+  const headers = {
+    'Content-Type': 'application/json;charset=UTF-8',
+    Authorization: `Bearer ${authToken}`,
+    'User-Agent': USER_AGENT,
+    'Cfmoto-X-Param': param,
+    'Cfmoto-X-Sign': sign,
+    'Cfmoto-X-Sign-Type': '0',
+    ...extraHeaders,
+  };
+  if (bodyStr !== undefined) headers['Content-Length'] = Buffer.byteLength(bodyStr);
+  return request(`${SOCIAL_BASE}${fullPath}`, { method, headers, body: bodyStr });
+}
+
+/** 从各接口响应里递归取帖子 id（mlink798 解析法：优先 tuuid/uuid/postId 等） */
+function socialPostId(data) {
+  if (!data) return null;
+  if (typeof data === 'string' || typeof data === 'number') return String(data);
+  if (Array.isArray(data)) return socialPostId(data[0]);
+  const direct = data.uuid || data.tuuid || data.postId || data.postid || data.articleId || data.articleID || data.id || data.dataId || data.tid;
+  if (direct) return String(direct);
+  for (const key of ['records', 'list', 'rows', 'data', 'result']) {
+    const postId = socialPostId(data[key]);
+    if (postId) return postId;
+  }
+  return null;
+}
+
+/** 读取自己的动态列表（mineArticleInfo），找到最近一条，返回其 tuuid（帖子 id） */
+async function socialMinePostId(authToken, userId) {
+  const res = await socialRequest('GET', '/community/mineArticleInfo', authToken, {
+    params: { userId, page: 1, pageSize: 10 },
+  });
+  return socialPostId(res && res.data);
+}
+
+/** 社区任务闭环：发帖 -> 取 id -> 点赞 -> 分享 -> 删除（按开关依次执行） */
 async function runCommunityTasks(authToken, user, tag) {
   const lines = [];
-  for (const [name, t] of Object.entries(COMMUNITY_TASKS)) {
-    if (!t.enabled) continue;
-    if (t.path.includes('TODO')) {
-      lines.push(`[${name}] 接口未配置，已跳过`);
-      continue;
-    }
+  const anyOn = Object.values(COMMUNITY_ENABLED).some(Boolean);
+  if (!anyOn) {
+    console.log(`[${tag}] 社区任务前 4 项未启用（接口已备好，见 COMMUNITY_ENABLED）`);
+    return lines;
+  }
+
+  // 1) 发帖：POST commonArticle，body = { postcontent }，成功返回 code=10000 但无 id
+  if (COMMUNITY_ENABLED.post) {
     try {
-      const body = t.body !== undefined && t.body !== null ? JSON.stringify(t.body) : undefined;
-      const res = await signedRequest(t.method, t.path, authToken, { userId: user.id, body });
-      console.log(`[${tag}] ${name} 响应：`, JSON.stringify(res));
+      const res = await socialRequest('POST', '/commonArticle', authToken, { body: { postcontent: '开心的一天' } });
       const ok = res && res.code === '10000';
-      lines.push(`[${name}] ${ok ? '成功' : `失败 ${JSON.stringify(res).slice(0, 150)}`}`);
+      lines.push(`[发帖] ${ok ? '成功' : `失败 ${JSON.stringify(res).slice(0, 120)}`}`);
     } catch (e) {
-      lines.push(`[${name}] 异常：${e.message}`);
+      lines.push(`[发帖] 异常：${e.message}`);
     }
   }
-  if (!lines.length) console.log(`[${tag}] 未启用社区任务（点赞/发帖/分享/删帖）`);
+
+  // 2) 取自己的帖子 id（发帖接口不回 id，需读列表），判断有无可操作的帖子
+  let postId = null;
+  try {
+    postId = await socialMinePostId(authToken, user.id);
+  } catch (e) {
+    console.log(`[${tag}] 读取列表失败：${e.message}`);
+  }
+  if (!postId) {
+    lines.push('[互动] 未取得帖子 id，跳过点赞/分享/删除');
+    return lines;
+  }
+  lines.push(`[互动] 帖子 id=${postId}`);
+
+  // 3) 点赞：POST socialCommu/likeFavoriteInfo，body = { postId, kindFlag:"0" }
+  if (COMMUNITY_ENABLED.like) {
+    try {
+      const res = await socialRequest('POST', '/socialCommu/likeFavoriteInfo', authToken, { body: { postId: String(postId), kindFlag: '0' } });
+      lines.push(`[点赞] ${res && res.code === '10000' ? '成功' : `失败 ${JSON.stringify(res).slice(0, 120)}`}`);
+    } catch (e) {
+      lines.push(`[点赞] 异常：${e.message}`);
+    }
+  }
+
+  // 4) 分享：PUT article/share/{postId}（无 body）
+  if (COMMUNITY_ENABLED.share) {
+    try {
+      const res = await socialRequest('PUT', `/article/share/${postId}`, authToken);
+      lines.push(`[分享] ${res && res.code === '10000' ? '成功' : `失败 ${JSON.stringify(res).slice(0, 120)}`}`);
+    } catch (e) {
+      lines.push(`[分享] 异常：${e.message}`);
+    }
+  }
+
+  // 5) 删除（清理自己发的测试帖）：DELETE commonArticle/deleteArticle?articleId=&postType=1
+  if (COMMUNITY_ENABLED.del) {
+    try {
+      const res = await socialRequest('DELETE', `/commonArticle/deleteArticle?articleId=${postId}&postType=1`, authToken);
+      lines.push(`[删除] ${res && res.code === '10000' ? '成功' : `失败 ${JSON.stringify(res).slice(0, 120)}`}`);
+    } catch (e) {
+      lines.push(`[删除] 异常：${e.message}`);
+    }
+  }
+
   return lines;
 }
 
