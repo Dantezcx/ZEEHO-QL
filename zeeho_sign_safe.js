@@ -216,7 +216,6 @@ async function claimBoxPrize(authToken, user) {
 }
 
 // ====== 社区任务：点赞 / 发帖 / 分享 / 删帖 ======
-// ✅ 四个接口已在 2026-09-02 通过对开源仓库 mlink798/ZEEHO 的逆向确认并实测通过。
 //    走 tapi.zeehoev.com 网关（独立于 h5 签到网关），前缀 /v1.0/social/cfmotoserversocial/，
 //    签名与签到不同：待签串 = bodyStr(query) + param + APP_SECRET，且 Authorization 带 Bearer 前缀。
 // ⚠️ 风险提示：自动发帖+删帖属刷任务行为，内容过于规律可能触发官方风控，请自行评估。
@@ -268,7 +267,7 @@ async function socialRequest(method, path, authToken, { body, params, extraHeade
   return request(`${base}${fullPath}`, { method, headers, body: bodyStr });
 }
 
-/** 从各接口响应里递归取帖子 id（mlink798 解析法：优先 tuuid/uuid/postId 等） */
+/** 从各接口响应里递归取帖子 id（优先 tuuid/uuid/postId 等） */
 function socialPostId(data) {
   if (!data) return null;
   if (typeof data === 'string' || typeof data === 'number') return String(data);
@@ -375,7 +374,7 @@ async function runCommunityTasks(authToken, user, tag) {
       const res = await socialRequest('PUT', `/article/share/${postId}`, authToken);
       const ok = res && res.code === '10000';
       lines.push(`[分享] ${ok ? '成功' : `失败 ${JSON.stringify(res).slice(0, 120)}`}`);
-      // 分享成功后确认积分，让分享积分入账（与 mlink798 一致）
+      // 分享成功后确认积分，让分享积分入账
       if (ok && CLAIM_POINTS_ENABLED) {
         const ok2 = await mineAdjustByShare(authToken);
         lines.push(`[分享积分] ${ok2 ? '已入账' : '触发失败'}`);
