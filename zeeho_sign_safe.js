@@ -290,6 +290,21 @@ async function socialMinePostId(authToken, userId) {
   return socialPostId(res && res.data);
 }
 
+/** 判断今天是否已发过动态：读 mineArticleInfo 第一条，createDate 前10位是否等于今天（东八区） */
+async function hasPostedToday(authToken, userId) {
+  try {
+    const res = await socialRequest('GET', '/community/mineArticleInfo', authToken, {
+      params: { userId, page: 1, pageSize: 1 },
+    });
+    const data = res && res.data;
+    const first = Array.isArray(data) ? data[0] : data;
+    if (!first || !first.createDate) return false; // 没发过
+    return String(first.createDate).slice(0, 10) === beijingToday();
+  } catch (e) {
+    return false; // 查询失败不阻断，照常尝试发帖
+  }
+}
+
 /** 分享积分确认（adjustByShare，走 /v1.0/mine/ 网关）：分享成功后调用，让分享积分入账 */
 async function mineAdjustByShare(authToken) {
   const res = await socialRequest('GET', '/integral/adjustByShare', authToken, { base: MINE_BASE });
@@ -315,14 +330,19 @@ async function runCommunityTasks(authToken, user, tag) {
     return lines;
   }
 
-  // 1) 发帖：POST commonArticle，body = { postcontent }，成功返回 code=10000 但无 id
+  // 1) 发帖：POST commonArticle，body = { postcontent }；当天已发则跳过（避免堆积测试帖）
   if (COMMUNITY_ENABLED.post) {
-    try {
-      const res = await socialRequest('POST', '/commonArticle', authToken, { body: { postcontent: '开心的一天' } });
-      const ok = res && res.code === '10000';
-      lines.push(`[发帖] ${ok ? '成功' : `失败 ${JSON.stringify(res).slice(0, 120)}`}`);
-    } catch (e) {
-      lines.push(`[发帖] 异常：${e.message}`);
+    const already = await hasPostedToday(authToken, user.id);
+    if (already) {
+      lines.push(`[发帖] 今天已发过，跳过`);
+    } else {
+      try {
+        const res = await socialRequest('POST', '/commonArticle', authToken, { body: { postcontent: '开心的一天' } });
+        const ok = res && res.code === '10000';
+        lines.push(`[发帖] ${ok ? '成功' : `失败 ${JSON.stringify(res).slice(0, 120)}`}`);
+      } catch (e) {
+        lines.push(`[发帖] 异常：${e.message}`);
+      }
     }
   }
 
