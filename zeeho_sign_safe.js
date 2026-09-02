@@ -228,7 +228,7 @@ const COMMUNITY_ENABLED = {
   like: true, // 点赞
   post: true, // 发帖
   share: true, // 分享
-  del: false, // 删除（清理自己发的测试帖）
+  del: false, // 删除（接口30121服务端拒绝，App内手动删有效，保持关闭）
 };
 
 /** 互动后领取分享积分（adjustByShare，走 /v1.0/mine/ 网关）：分享成功后调用，让积分入账 */
