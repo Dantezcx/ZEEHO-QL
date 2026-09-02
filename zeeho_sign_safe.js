@@ -231,6 +231,10 @@ const COMMUNITY_ENABLED = {
   del: false, // 删除（清理自己发的测试帖）
 };
 
+/** 互动后领取分享积分（adjustByShare，走 /v1.0/mine/ 网关）：分享成功后调用，让积分入账 */
+const CLAIM_POINTS_ENABLED = true;
+const MINE_BASE = 'https://tapi.zeehoev.com/v1.0/mine/cfmotoservermine';
+
 /** 社区常量 */
 const TS = () => Date.now();
 const NONCE = () => TS() + Math.random().toString(36).slice(2, 18);
@@ -243,8 +247,9 @@ function makeSignApp(signBody) {
   return { param, sign };
 }
 
-/** 社区请求（走 tapi 网关）：GET 用 params 拼 query 并参与签名；POST/DELETE 用 body 参与签名；Authorization 带 Bearer */
-async function socialRequest(method, path, authToken, { body, params, extraHeaders } = {}) {
+/** 社区请求（走 tapi 网关）：GET 用 params 拼 query 并参与签名；POST/DELETE 用 body 参与签名；Authorization 带 Bearer
+ *  默认 base 为社交前缀；传 base 可指向 mine 等其它网关域 */
+async function socialRequest(method, path, authToken, { body, params, extraHeaders, base = SOCIAL_BASE } = {}) {
   const bodyStr = body !== undefined ? JSON.stringify(body) : undefined;
   const query = params ? Object.keys(params).map((k) => `${k}=${params[k]}`).join('&') : '';
   const fullPath = query ? `${path}?${query}` : path;
@@ -260,7 +265,7 @@ async function socialRequest(method, path, authToken, { body, params, extraHeade
     ...extraHeaders,
   };
   if (bodyStr !== undefined) headers['Content-Length'] = Buffer.byteLength(bodyStr);
-  return request(`${SOCIAL_BASE}${fullPath}`, { method, headers, body: bodyStr });
+  return request(`${base}${fullPath}`, { method, headers, body: bodyStr });
 }
 
 /** 从各接口响应里递归取帖子 id（mlink798 解析法：优先 tuuid/uuid/postId 等） */
@@ -283,6 +288,22 @@ async function socialMinePostId(authToken, userId) {
     params: { userId, page: 1, pageSize: 10 },
   });
   return socialPostId(res && res.data);
+}
+
+/** 分享积分确认（adjustByShare，走 /v1.0/mine/ 网关）：分享成功后调用，让分享积分入账 */
+async function mineAdjustByShare(authToken) {
+  const res = await socialRequest('GET', '/integral/adjustByShare', authToken, { base: MINE_BASE });
+  return res && res.code === '10000';
+}
+
+/** 查询当前总积分（GET /v1.0/mine/cfmotoservermine/setting/{userId}），失败返回 null */
+async function fetchTotalScore(authToken, userId) {
+  try {
+    const res = await socialRequest('GET', `/setting/${userId}`, authToken, { base: MINE_BASE });
+    return res && res.code === '10000' ? res.data.score : null;
+  } catch (e) {
+    return null;
+  }
 }
 
 /** 社区任务闭环：发帖 -> 取 id -> 点赞 -> 分享 -> 删除（按开关依次执行） */
@@ -332,7 +353,13 @@ async function runCommunityTasks(authToken, user, tag) {
   if (COMMUNITY_ENABLED.share) {
     try {
       const res = await socialRequest('PUT', `/article/share/${postId}`, authToken);
-      lines.push(`[分享] ${res && res.code === '10000' ? '成功' : `失败 ${JSON.stringify(res).slice(0, 120)}`}`);
+      const ok = res && res.code === '10000';
+      lines.push(`[分享] ${ok ? '成功' : `失败 ${JSON.stringify(res).slice(0, 120)}`}`);
+      // 分享成功后确认积分，让分享积分入账（与 mlink798 一致）
+      if (ok && CLAIM_POINTS_ENABLED) {
+        const ok2 = await mineAdjustByShare(authToken);
+        lines.push(`[分享积分] ${ok2 ? '已入账' : '触发失败'}`);
+      }
     } catch (e) {
       lines.push(`[分享] 异常：${e.message}`);
     }
@@ -347,6 +374,10 @@ async function runCommunityTasks(authToken, user, tag) {
       lines.push(`[删除] 异常：${e.message}`);
     }
   }
+
+  // 6) 查询当前总积分（每次跑完最后输出）
+  const score = await fetchTotalScore(authToken, user.id);
+  lines.push(score !== null ? `[当前总积分] ${score}` : '[当前总积分] 查询失败');
 
   return lines;
 }
