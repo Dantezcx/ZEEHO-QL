@@ -222,12 +222,12 @@ async function claimBoxPrize(authToken, user) {
 
 const SOCIAL_BASE = 'https://tapi.zeehoev.com/v1.0/social/cfmotoserversocial';
 
-/** 社区接口开关：开启 post/like/share（打卡核心环）；del 保持关闭（删帖30121权限） */
+/** 社区接口开关：like/post/share/del 全部开启 */
 const COMMUNITY_ENABLED = {
   like: true, // 点赞
   post: true, // 发帖
   share: true, // 分享
-  del: false, // 删除（接口30121服务端拒绝，App内手动删有效，保持关闭）
+  del: true, // 删除（2026-09-23 实测走普通 HTTPS 即可成功；此前的 30121 系 query 未参与签名的 bug，修复见下方第 5) 步）
 };
 
 /** 互动后领取分享积分（adjustByShare，走 /v1.0/mine/ 网关）：分享成功后调用，让积分入账 */
@@ -384,11 +384,15 @@ async function runCommunityTasks(authToken, user, tag) {
     }
   }
 
-  // 5) 删除（清理自己发的测试帖）：DELETE commonArticle/deleteArticle?articleId=&postType=1
+  // 5) 删除（清理自己发的测试帖）：DELETE commonArticle/deleteArticle
+  //    ⚠️ query 必须走 params 传入：socialRequest 在无 body 时用 params 拼出的 query 参与签名，
+  //       若把 query 直接拼在 path 里，签名体为空 → 服务端返回 30121
   if (COMMUNITY_ENABLED.del) {
     try {
-      const res = await socialRequest('DELETE', `/commonArticle/deleteArticle?articleId=${postId}&postType=1`, authToken);
-      lines.push(`[删除] ${res && res.code === '10000' ? '成功' : `失败 ${JSON.stringify(res).slice(0, 120)}`}`);
+      const res = await socialRequest('DELETE', '/commonArticle/deleteArticle', authToken, {
+        params: { articleId: postId, postType: 1 },
+      });
+      lines.push(`[删除] ${res && res.code === '10000' ? '成功' : `失败 ${JSON.stringify(res).slice(0, 80)}`}`);
     } catch (e) {
       lines.push(`[删除] 异常：${e.message}`);
     }
