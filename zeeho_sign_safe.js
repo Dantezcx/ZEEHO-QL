@@ -21,6 +21,8 @@
  * 2. 环境变量添加（共 4 个）：
  *    - ZEEHO_APP_ID        原脚本里的 APP_ID
  *    - ZEEHO_APP_SECRET    原脚本里的 APP_SECRET（40 位 hex）
+ *    - ZEEHO_APP_ID_TAPI / ZEEHO_APP_SECRET_TAPI（可选）tapi 网关（社区/积分）的密钥；
+ *                          与 h5 是两套，不配则回落用上面那对
  *    - ZEEHO_AUTH_TOKEN    ZEEHO App 抓包得到的 authorization
  *                          中 "Bearer " 之后的那段 UUID（不含 Bearer、空格与换行）。
  *                          多账号用 & 或换行分隔，例如：
@@ -43,6 +45,10 @@ const crypto = require('crypto');
 // ====== 常量（敏感值改为从环境变量读取） ======
 const APP_ID = process.env.ZEEHO_APP_ID || '';
 const APP_SECRET = process.env.ZEEHO_APP_SECRET || '';
+// tapi 网关（社区/积分）密钥：h5 与 tapi 是**两套**独立密钥，用错会报 30125 permit error。
+// 未单独配置时回落用 h5 那对（仅适用于两网关密钥恰好相同的账号）。
+const APP_ID_TAPI = process.env.ZEEHO_APP_ID_TAPI || APP_ID;
+const APP_SECRET_TAPI = process.env.ZEEHO_APP_SECRET_TAPI || APP_SECRET;
 if (!APP_ID || !APP_SECRET) {
   throw new Error('未配置 ZEEHO_APP_ID / ZEEHO_APP_SECRET 环境变量，脚本退出。');
 }
@@ -241,8 +247,8 @@ const NONCE = () => TS() + Math.random().toString(36).slice(2, 18);
 
 /** 社区专用签名：md5(sha1(签名体 + param + APP_SECRET))；签名体 POST 取 bodyStr、GET 取 query */
 function makeSignApp(signBody) {
-  const param = `appId=${APP_ID}&nonce=${NONCE()}&timestamp=${TS()}`;
-  const toSign = signBody + param + APP_SECRET;
+  const param = `appId=${APP_ID_TAPI}&nonce=${NONCE()}&timestamp=${TS()}`;
+  const toSign = signBody + param + APP_SECRET_TAPI;
   const sign = crypto.createHash('md5').update(crypto.createHash('sha1').update(toSign, 'utf8').digest('hex'), 'utf8').digest('hex');
   return { param, sign };
 }

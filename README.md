@@ -24,6 +24,8 @@
 |--------|------|----------|
 | `ZEEHO_APP_ID` | App 签名参数 | 抓包 ZEEHO App 任意接口请求头 `Cfmoto-X-Param` 里的 `appId=xxx&...` 段，或反编译 App |
 | `ZEEHO_APP_SECRET` | App 签名密钥 | **只能通过反编译 ZEEHO App 获取**（不在网络流量里出现）。无逆向能力者需向有此密钥的人索取 |
+| `ZEEHO_APP_ID_TAPI`（可选） | tapi 网关签名参数 | 社区/积分接口走 `tapi.zeehoev.com`，与 h5 是**两套独立密钥**。不配则回落用上面的 `ZEEHO_APP_ID` |
+| `ZEEHO_APP_SECRET_TAPI`（可选） | tapi 网关签名密钥 | 同上。⚠️ 两网关密钥不同时必须单独配，否则社区任务报 `30125 permit error` |
 | `ZEEHO_AUTH_TOKEN` | 用户登录态 | 抓包 ZEEHO App 任意接口请求头 `Authorization: Bearer <token>` 中 Bearer 之后那段 UUID |
 | `ZEEHO_DEVICE_ID`（可选） | 设备指纹 UUID | 不配则每次运行随机生成；想固定指纹可填一个标准 UUID |
 
