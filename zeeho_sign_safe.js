@@ -3,7 +3,7 @@
  *
  * 移植自 Scriptable 小组件脚本（ZEEHO.pretty.js）与快捷指令 ZEEHO自动签到R.2.1，
  * 业务接口、请求头与签名算法与 App 完全一致：
- *   sign = md5(sha1("server_name=SMART" + "appId=<APP_ID>&nonce=<uuid>&timestamp=<ms>" + APP_SECRET))
+ *   sign = md5(sha1(<请求参数串> + "appId=<APP_ID>&nonce=<uuid>&timestamp=<ms>" + APP_SECRET))
  *
  * ── 与原版差异（脱敏）──────────────────────────────────
  *   1. APP_ID / APP_SECRET 改为从环境变量读取（ZEEHO_APP_ID / ZEEHO_APP_SECRET）
@@ -48,8 +48,8 @@ if (!APP_ID || !APP_SECRET) {
 }
 
 const BASE_URL = 'https://h5.zeehoev.com';
-const BASE_INFO_PATH = '/cfmotoservermine/baseInfo?server_name=SMART';
-const SIGNIN_PATH = '/cfmotoservermine/signin?server_name=SMART';
+const BASE_INFO_PATH = '/cfmotoservermine/H5/baseInfo';
+const SIGNIN_PATH = '/cfmotoservermine/H5/signin';
 // 设备指纹：优先用环境变量，未配置则每次运行随机生成（避免长期固定指纹被风控）
 const DEVICE_ID = process.env.ZEEHO_DEVICE_ID || uuid();
 const USER_AGENT =
@@ -71,9 +71,9 @@ function uuid() {
 }
 
 /** 生成签名参数对：Cfmoto-X-Param 与 Cfmoto-X-Sign */
-function makeSign() {
+function makeSign(query = '', body = '') {
   const param = `appId=${APP_ID}&nonce=${uuid()}&timestamp=${Date.now()}`;
-  const toSign = 'server_name=SMART' + param + APP_SECRET;
+  const toSign = query + body + param + APP_SECRET;
   const sha1Hex = crypto.createHash('sha1').update(toSign, 'utf8').digest('hex');
   const sign = crypto.createHash('md5').update(sha1Hex, 'utf8').digest('hex');
   return { param, sign };
@@ -134,7 +134,8 @@ function beijingToday() {
 
 /** 带签名的通用请求：签到与社区任务共用。GET 不带体；POST 无体时补 Content-Length: 0；有 body 时按 JSON 发送 */
 async function signedRequest(method, path, authToken, { userId, body, extraHeaders } = {}) {
-  const { param, sign } = makeSign();
+  const _q = path.includes('?') ? path.split('?')[1] : '';
+  const { param, sign } = makeSign(_q, body || '');
   const headers = {
     ...buildHeaders(authToken, param, sign),
     ...(userId !== undefined ? { user_id: userId } : {}),
